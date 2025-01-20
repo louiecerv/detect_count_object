@@ -4,7 +4,6 @@ import google.generativeai as genai
 import json
 import os
 import re
-import tempfile
 
 MODEL_ID = "gemini-2.0-flash-exp" 
 api_key = os.getenv("GEMINI_API_KEY")
@@ -15,7 +14,7 @@ model = genai.GenerativeModel(MODEL_ID)
 # For this task, we will not use streaming
 ENABLE_STREAMING = False
 
-def generate_response(prompt):
+def generate_response(image_path, prompt):
     """Generates a response from an AI model
 
     Args:
@@ -25,18 +24,29 @@ def generate_response(prompt):
     response from the AI model.
     """
     try:
-        
+        # Read image data as bytes
+        with open(image_path, "rb") as f:
+            image_bytes = f.read()
+
+        # Create the PDF input for the model
+        image_part = {
+            "mime_type": "image/jpeg",
+            "data": image_bytes
+        }
+
         # Send file and prompt to Gemini API
         response = model.generate_content(
-            [ prompt ],                 
-            stream=ENABLE_STREAMING
-        )  
+            [
+                prompt, 
+                image_part
+            ]
+        )
+
         return response.text
 
     except Exception as e:
         st.error(f"An error occurred: {e}")
         return None 
-
 
 def plot_bounding_boxes(im, noun_phrases_and_positions):
     """
@@ -114,29 +124,10 @@ def generate_prompt(object_list):
 def add_boxes_to_image(image_file, prompt):
     
     try:
-        image_path = ""
-        mime_type = image_file.type
-
         if image_file is not None:
-            # Save the image to a temporary file
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
-                temp_file.write(image_file.read())
-                image_path = temp_file.name
-                st.write("Image saved to:", image_path) 
-                #st.image(Image.open(image_path), caption="Captured Image", use_container_width=True)
+            response = generate_response(image_file, prompt)
 
-            # Upload the file with the correct MIME type
-            file_data = genai.upload_file(image_path, mime_type=mime_type)
-            
-            # Send file and prompt to Gemini API
-            response = model.cgenerate_content((
-                [
-                    prompt, 
-                    file_data
-                ]
-            )
-
-            boxes = parse_list_boxes_with_label(response.text)
+            boxes = parse_list_boxes_with_label(response)
             noun_phrases_and_positions = list(boxes.items())
             noun_phrases_and_positions = format_input(noun_phrases_and_positions)
 
